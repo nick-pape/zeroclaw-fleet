@@ -1,11 +1,16 @@
 use anyhow::{Context, Result};
 use axum::Router;
-use axum::routing::get;
+use axum::body::Body;
+use axum::extract::Request;
+use axum::response::IntoResponse;
 use clap::{Parser, Subcommand};
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::signal;
+use tokio::sync::RwLock;
+use tower::Service;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -19,6 +24,9 @@ mod proxy;
 mod render;
 mod web;
 
+use config::OrchestratorConfig;
+use proxy::ProxyConfig;
+
 #[derive(Parser, Debug)]
 #[command(version, about = "Orchestrator for running multiple isolated ZeroClaw instances")]
 struct Cli {
@@ -29,49 +37,68 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Command {
     /// Run the orchestrator HTTP server (default).
-    Serve {
-        /// HTTP bind address
-        #[arg(long, env = "FLEET_BIND", default_value = "0.0.0.0:8080")]
-        bind: SocketAddr,
-
-        /// Path to the fleet manifest directory.
-        #[arg(long, env = "FLEET_DIR", default_value = "/etc/zeroclaw-fleet")]
-        fleet_dir: PathBuf,
-
-        /// Path to per-claw state.
-        #[arg(long, env = "FLEET_STATE_DIR", default_value = "/var/lib/zeroclaw-fleet")]
-        state_dir: PathBuf,
-    },
+    Serve(ServeArgs),
 
     /// Render a per-claw `config.toml` from a base + overlay and print to
     /// stdout. Useful for local parity testing against a known-good config.
     Render {
-        /// Path to `base.toml`.
         #[arg(long)]
         base: PathBuf,
-
-        /// Path to the claw overlay TOML.
         #[arg(long)]
         overlay: PathBuf,
-
-        /// Bearer the orchestrator would use to scrape this claw's API.
-        /// Hashed before injection. Defaults to a deterministic test value.
         #[arg(long, default_value = "zc_render_demo_bearer")]
         bearer: String,
-
-        /// Placeholder substituted into `[[mcp.servers]].headers.Authorization`.
         #[arg(long, default_value = "__MCP_BEARER__")]
         mcp_bearer_placeholder: String,
-
-        /// MCP hub URL.
         #[arg(long, default_value = "https://hub.example.com/mcp")]
         mcp_server_url: String,
-
-        /// Namespace name (becomes the MCP tool prefix in ZeroClaw —
-        /// e.g. `papehouse` → `papehouse__heb_*`).
         #[arg(long, default_value = "hub")]
         mcp_server_name: String,
     },
+}
+
+#[derive(Parser, Debug, Clone)]
+struct ServeArgs {
+    /// HTTP bind address.
+    #[arg(long, env = "FLEET_BIND", default_value = "0.0.0.0:8080")]
+    bind: SocketAddr,
+
+    /// Path to the fleet manifest directory.
+    #[arg(long, env = "FLEET_DIR", default_value = "/etc/zeroclaw-fleet")]
+    fleet_dir: PathBuf,
+
+    /// Path to per-claw state.
+    #[arg(long, env = "FLEET_STATE_DIR", default_value = "/var/lib/zeroclaw-fleet")]
+    state_dir: PathBuf,
+
+    /// Host header that identifies the fleet UI (e.g. `claws.example.com`).
+    #[arg(long, env = "FLEET_HOST")]
+    fleet_host: String,
+
+    /// Host suffix that identifies a per-claw subdomain (e.g.
+    /// `claw.example.com` matches `<name>.claw.example.com`).
+    #[arg(long, env = "FLEET_CLAW_SUFFIX")]
+    claw_suffix: String,
+
+    /// MCP hub URL the renderer wires into every claw.
+    #[arg(long, env = "FLEET_MCP_SERVER_URL")]
+    mcp_server_url: String,
+
+    /// Namespace name (becomes ZeroClaw's MCP tool prefix).
+    #[arg(long, env = "FLEET_MCP_SERVER_NAME", default_value = "hub")]
+    mcp_server_name: String,
+
+    /// Placeholder substituted into the rendered MCP Authorization header.
+    #[arg(long, env = "FLEET_MCP_BEARER_PLACEHOLDER", default_value = "__MCP_BEARER__")]
+    mcp_bearer_placeholder: String,
+
+    /// Upstream port on every claw container (always 42617 for ZeroClaw).
+    #[arg(long, env = "FLEET_CLAW_PORT", default_value_t = 42617)]
+    claw_port: u16,
+
+    /// Cost poller cadence in seconds.
+    #[arg(long, env = "FLEET_COST_POLL_INTERVAL", default_value_t = 30)]
+    cost_poll_interval_secs: u64,
 }
 
 #[tokio::main]
@@ -81,38 +108,125 @@ async fn main() -> Result<()> {
         .init();
 
     let cli = Cli::parse();
-    match cli.command.unwrap_or(default_serve()) {
-        Command::Serve { bind, fleet_dir, state_dir } => serve(bind, fleet_dir, state_dir).await,
-        Command::Render { base, overlay, bearer, mcp_bearer_placeholder, mcp_server_url, mcp_server_name } => {
+    match cli.command {
+        Some(Command::Serve(args)) => serve(args).await,
+        Some(Command::Render { base, overlay, bearer, mcp_bearer_placeholder, mcp_server_url, mcp_server_name }) => {
             render_to_stdout(base, overlay, bearer, mcp_bearer_placeholder, mcp_server_url, mcp_server_name)
+        }
+        None => {
+            eprintln!("usage: zeroclaw-fleet <serve|render> ...");
+            eprintln!("       try --help for details");
+            std::process::exit(2);
         }
     }
 }
 
-fn default_serve() -> Command {
-    Command::Serve {
-        bind: "0.0.0.0:8080".parse().expect("default bind"),
-        fleet_dir: PathBuf::from("/etc/zeroclaw-fleet"),
-        state_dir: PathBuf::from("/var/lib/zeroclaw-fleet"),
-    }
-}
+async fn serve(args: ServeArgs) -> Result<()> {
+    let proxy_cfg = ProxyConfig {
+        fleet_host: Arc::from(args.fleet_host.as_str()),
+        claw_suffix: Arc::from(args.claw_suffix.as_str()),
+        claw_port: args.claw_port,
+    };
 
-async fn serve(bind: SocketAddr, fleet_dir: PathBuf, state_dir: PathBuf) -> Result<()> {
+    let cfg = OrchestratorConfig {
+        bind: args.bind,
+        fleet_dir: args.fleet_dir.clone(),
+        state_dir: args.state_dir.clone(),
+        proxy: proxy_cfg,
+        mcp_server_url: args.mcp_server_url,
+        mcp_server_name: args.mcp_server_name,
+        mcp_bearer_placeholder: args.mcp_bearer_placeholder,
+        cost_poll_interval_secs: args.cost_poll_interval_secs,
+    }
+    .into_shared();
+
     info!(
-        bind = %bind,
-        fleet_dir = %fleet_dir.display(),
-        state_dir = %state_dir.display(),
+        bind = %cfg.bind,
+        fleet_dir = %cfg.fleet_dir.display(),
+        state_dir = %cfg.state_dir.display(),
+        fleet_host = %cfg.proxy.fleet_host,
+        claw_suffix = %cfg.proxy.claw_suffix,
         "starting zeroclaw-fleet"
     );
 
-    let app = Router::new().route("/healthz", get(healthz));
+    let driver = Arc::new(
+        driver::docker::DockerDriver::connect_local()
+            .context("connect to docker daemon at startup")?,
+    );
 
-    let listener = TcpListener::bind(bind).await?;
+    let claws = match try_load_claw_list(&cfg.fleet_dir) {
+        Ok(list) => {
+            info!(count = list.len(), "loaded claw list from fleet.yaml");
+            Arc::new(RwLock::new(list))
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "no fleet.yaml or unreadable; starting with empty fleet");
+            Arc::new(RwLock::new(Vec::new()))
+        }
+    };
+
+    let cost_cache = cost_poller::new_cache();
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .context("build reqwest client")?;
+
+    cost_poller::spawn(cfg.clone(), cost_cache.clone(), http.clone(), claws.clone());
+
+    let state = api::AppState {
+        cfg: cfg.clone(),
+        driver,
+        cost_cache,
+        claws,
+        http: http.clone(),
+    };
+
+    let fleet_router = api::router(state);
+    let app = build_top_level_router(cfg.clone(), http, fleet_router);
+
+    let listener = TcpListener::bind(cfg.bind).await?;
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
     Ok(())
+}
+
+fn try_load_claw_list(fleet_dir: &PathBuf) -> Result<Vec<String>> {
+    let path = fleet_dir.join("fleet.yaml");
+    let m = manifest::FleetManifest::from_path(&path)?;
+    Ok(m.claws)
+}
+
+/// Wrap the fleet router with a top-level host-based dispatcher.
+/// Requests addressed to a per-claw subdomain proxy to the matching
+/// upstream; everything else flows into `fleet_router`.
+fn build_top_level_router(
+    cfg: Arc<OrchestratorConfig>,
+    http: reqwest::Client,
+    fleet_router: Router,
+) -> Router {
+    Router::new().fallback(move |req: Request<Body>| {
+        let cfg = cfg.clone();
+        let http = http.clone();
+        let mut inner = fleet_router.clone();
+        async move {
+            match proxy::maybe_proxy(&cfg.proxy, &http, req).await {
+                Ok(resp) => resp,
+                Err(req) => {
+                    // Fleet UI host — hand off to the inner router.
+                    match inner.call(req).await {
+                        Ok(resp) => resp.into_response(),
+                        Err(e) => (
+                            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("router error: {e}"),
+                        )
+                            .into_response(),
+                    }
+                }
+            }
+        }
+    })
 }
 
 fn render_to_stdout(
@@ -135,10 +249,6 @@ fn render_to_stdout(
     let rendered = render::render(&base_src, &claw, &inj)?;
     print!("{rendered}");
     Ok(())
-}
-
-async fn healthz() -> &'static str {
-    "ok"
 }
 
 async fn shutdown_signal() {
