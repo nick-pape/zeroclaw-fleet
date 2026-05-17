@@ -1,0 +1,7 @@
+/target
+Cargo.lock.bak
+*.swp
+.env
+.env.*
+!.env.example
+.DS_Store
