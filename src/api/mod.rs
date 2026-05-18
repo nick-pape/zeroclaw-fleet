@@ -14,6 +14,7 @@ use tokio::sync::RwLock;
 use crate::config::OrchestratorConfig;
 use crate::cost_poller::CostCache;
 use crate::driver::docker::DockerDriver;
+use crate::provision::ProvisionDeps;
 
 pub mod claws;
 pub mod cost;
@@ -31,6 +32,9 @@ pub struct AppState {
     /// manifest reload path; read by every handler.
     pub claws: Arc<RwLock<Vec<String>>>,
     pub http: reqwest::Client,
+    /// Set when bao + Authentik + LiteLLM bootstrap succeeded at startup.
+    /// `None` means ops endpoints work but `/api/tenants` returns 503.
+    pub provision: Option<Arc<ProvisionDeps>>,
 }
 
 /// Build the fleet UI / API router. The HTTP+WS reverse proxy is wired

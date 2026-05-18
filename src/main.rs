@@ -25,6 +25,7 @@ mod render;
 mod web;
 
 use config::OrchestratorConfig;
+use provision::{ProvisionDeps, authentik::AuthentikClient, bao::BaoClient, litellm::LiteLlmClient};
 use proxy::ProxyConfig;
 
 #[derive(Parser, Debug)]
@@ -99,6 +100,46 @@ struct ServeArgs {
     /// Cost poller cadence in seconds.
     #[arg(long, env = "FLEET_COST_POLL_INTERVAL", default_value_t = 30)]
     cost_poll_interval_secs: u64,
+
+    // --- provisioning bootstrap (T6) ---
+
+    /// Bao HTTP URL (e.g. `https://bao.example.com`). When set together
+    /// with `--bao-token`, the orchestrator bootstraps the provisioning
+    /// deps from bao at startup. If either is missing, provisioning is
+    /// disabled and `/api/tenants` returns 503.
+    #[arg(long, env = "FLEET_BAO_URL")]
+    bao_url: Option<String>,
+
+    /// Bao service token. Mount as a docker secret in production.
+    #[arg(long, env = "FLEET_BAO_TOKEN", hide_env_values = true)]
+    bao_token: Option<String>,
+
+    /// KV-v2 mount the orchestrator's bao token can read/write under.
+    #[arg(long, env = "FLEET_BAO_MOUNT", default_value = "secret")]
+    bao_mount: String,
+
+    /// Bao path the orchestrator reads to find the LiteLLM master key.
+    /// Field name is always `api_key`.
+    #[arg(long, env = "FLEET_LITELLM_KEY_PATH", default_value = "services/litellm/master")]
+    bao_litellm_key_path: String,
+
+    /// LiteLLM admin URL.
+    #[arg(long, env = "FLEET_LITELLM_URL")]
+    litellm_url: Option<String>,
+
+    /// Bao path the orchestrator reads to find the Authentik admin API token.
+    /// Field name is always `api_token`.
+    #[arg(long, env = "FLEET_AUTHENTIK_TOKEN_PATH", default_value = "services/authentik/admin_token")]
+    bao_authentik_token_path: String,
+
+    /// Authentik base URL.
+    #[arg(long, env = "FLEET_AUTHENTIK_URL")]
+    authentik_url: Option<String>,
+
+    /// Existing Authentik OAuth2 provider name to clone for signing_key
+    /// + authorization_flow.
+    #[arg(long, env = "FLEET_AUTHENTIK_TEMPLATE", default_value = "mcp-interactive")]
+    authentik_template: String,
 }
 
 #[tokio::main]
@@ -133,9 +174,9 @@ async fn serve(args: ServeArgs) -> Result<()> {
         fleet_dir: args.fleet_dir.clone(),
         state_dir: args.state_dir.clone(),
         proxy: proxy_cfg,
-        mcp_server_url: args.mcp_server_url,
-        mcp_server_name: args.mcp_server_name,
-        mcp_bearer_placeholder: args.mcp_bearer_placeholder,
+        mcp_server_url: args.mcp_server_url.clone(),
+        mcp_server_name: args.mcp_server_name.clone(),
+        mcp_bearer_placeholder: args.mcp_bearer_placeholder.clone(),
         cost_poll_interval_secs: args.cost_poll_interval_secs,
     }
     .into_shared();
@@ -173,12 +214,19 @@ async fn serve(args: ServeArgs) -> Result<()> {
 
     cost_poller::spawn(cfg.clone(), cost_cache.clone(), http.clone(), claws.clone());
 
+    let provision = bootstrap_provision(&args, &http, &cfg.state_dir).await;
+    match provision.as_ref() {
+        Some(_) => info!("provisioning bootstrap OK — /api/tenants enabled"),
+        None => tracing::warn!("provisioning bootstrap incomplete — /api/tenants will return 503"),
+    }
+
     let state = api::AppState {
         cfg: cfg.clone(),
         driver,
         cost_cache,
         claws,
         http: http.clone(),
+        provision,
     };
 
     let fleet_router = api::router(state);
@@ -196,6 +244,45 @@ fn try_load_claw_list(fleet_dir: &PathBuf) -> Result<Vec<String>> {
     let path = fleet_dir.join("fleet.yaml");
     let m = manifest::FleetManifest::from_path(&path)?;
     Ok(m.claws)
+}
+
+/// Try to bootstrap the provisioning clients from bao. Returns None if
+/// the required env vars / bao secrets aren't present — the orchestrator
+/// keeps running with `/api/tenants` disabled.
+async fn bootstrap_provision(
+    args: &ServeArgs,
+    http: &reqwest::Client,
+    state_dir: &PathBuf,
+) -> Option<Arc<ProvisionDeps>> {
+    let bao_url = args.bao_url.as_ref()?;
+    let bao_token = args.bao_token.as_ref()?;
+    let litellm_url = args.litellm_url.as_ref()?;
+    let authentik_url = args.authentik_url.as_ref()?;
+
+    let bao = BaoClient::new(http.clone(), bao_url, bao_token).with_mount(&args.bao_mount);
+
+    let litellm_master = match bao.kv_get_field(&args.bao_litellm_key_path, "api_key").await {
+        Ok(k) => k,
+        Err(e) => {
+            tracing::warn!(error = %e, "bao read of LiteLLM master key failed");
+            return None;
+        }
+    };
+    let authentik_token = match bao.kv_get_field(&args.bao_authentik_token_path, "api_token").await {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::warn!(error = %e, "bao read of Authentik admin token failed");
+            return None;
+        }
+    };
+
+    Some(Arc::new(ProvisionDeps {
+        bao,
+        litellm: LiteLlmClient::new(http.clone(), litellm_url, litellm_master),
+        authentik: AuthentikClient::new(http.clone(), authentik_url, authentik_token),
+        authentik_template_name: Arc::from(args.authentik_template.as_str()),
+        state_dir: state_dir.clone(),
+    }))
 }
 
 /// Wrap the fleet router with a top-level host-based dispatcher.
