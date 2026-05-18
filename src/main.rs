@@ -249,8 +249,12 @@ async fn serve(args: ServeArgs) -> Result<()> {
         http.clone(),
         bao_for_rotation,
         token_url,
-        /* refresh_window_secs */ 30 * 60,
-        /* poll_interval_secs   */ 5 * 60,
+        // refresh when JWT has < 90s of life left. Authentik
+        // client_credentials JWTs have ~900s TTL — earlier the window
+        // was 30min, which triggered a refresh + container restart on
+        // every poll, dropping any in-flight user session.
+        /* refresh_window_secs */ 90,
+        /* poll_interval_secs   */ 60,
     );
 
     let state = api::AppState {
