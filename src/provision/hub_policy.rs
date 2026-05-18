@@ -52,6 +52,15 @@ impl HubIdentityBlock {
     }
 }
 
+/// Build the YAML "delete this block" snippet for the operator to apply
+/// to the hub's `policy.yaml`. Just the path to remove; the actual edit
+/// is human-driven (same blast-radius reasoning as `build_block`).
+pub fn build_removal_snippet(tenant: &str) -> String {
+    format!(
+        "# Remove the following entry from policy.yaml under `identities:`:\n#\n#   {tenant}:\n#     ... (delete this whole block)\n#\n# Then commit + push so the hub's Portainer pulls the change.\n"
+    )
+}
+
 /// Build a fresh identity block for a tenant from the manifest data.
 pub fn build_block(
     tenant: &str,

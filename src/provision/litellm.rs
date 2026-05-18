@@ -21,6 +21,27 @@ impl LiteLlmClient {
         }
     }
 
+    /// Delete a previously-minted virtual key. Idempotent — silently
+    /// succeeds on 404 (key already removed).
+    pub async fn delete_key(&self, key: &str) -> Result<()> {
+        let url = format!("{}/key/delete", self.base_url);
+        let body = serde_json::json!({ "keys": [key] });
+        let resp = self
+            .http
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.master_key))
+            .json(&body)
+            .send()
+            .await
+            .context("litellm POST /key/delete")?;
+        let status = resp.status();
+        if status.is_success() || status.as_u16() == 404 {
+            return Ok(());
+        }
+        let body = resp.text().await.unwrap_or_default();
+        Err(anyhow!("litellm /key/delete -> {status}: {body}"))
+    }
+
     /// Generate a virtual key scoped to a tenant. `models` is the allowed
     /// model list (empty = all models on the server). `monthly_budget_usd`
     /// enforces a hard cap.

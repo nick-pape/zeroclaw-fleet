@@ -95,6 +95,45 @@ impl BaoClient {
         Ok(())
     }
 
+    /// Permanently delete a KV-v2 secret (all versions). Use the
+    /// `metadata` path so the deletion is hard, not just soft.
+    pub async fn kv_delete(&self, path: &str) -> Result<()> {
+        let p = path.trim_start_matches('/');
+        let url = format!("{}/v1/{}/metadata/{p}", self.base_url, self.kv_mount);
+        let resp = self
+            .http
+            .delete(&url)
+            .header("X-Vault-Token", &self.token)
+            .send()
+            .await
+            .context("bao DELETE metadata")?;
+        let status = resp.status();
+        // 204 (no content) and 404 (already gone) both count as success.
+        if status.is_success() || status.as_u16() == 404 {
+            return Ok(());
+        }
+        let body = resp.text().await.unwrap_or_default();
+        Err(anyhow!("bao DELETE {url} -> {status}: {body}"))
+    }
+
+    /// Delete a JWT auth role.
+    pub async fn jwt_role_delete(&self, role: &str) -> Result<()> {
+        let url = format!("{}/v1/auth/jwt/role/{role}", self.base_url);
+        let resp = self
+            .http
+            .delete(&url)
+            .header("X-Vault-Token", &self.token)
+            .send()
+            .await
+            .context("bao DELETE jwt role")?;
+        let status = resp.status();
+        if status.is_success() || status.as_u16() == 404 {
+            return Ok(());
+        }
+        let body = resp.text().await.unwrap_or_default();
+        Err(anyhow!("bao DELETE {url} -> {status}: {body}"))
+    }
+
     /// Create or update a JWT auth role for a tenant's MCP scope.
     ///
     /// Maps to `bao write auth/jwt/role/<role>`. Idempotent.

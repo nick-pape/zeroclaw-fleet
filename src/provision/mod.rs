@@ -100,6 +100,17 @@ pub struct TenantProvisioned {
     pub steps_completed: Vec<String>,
 }
 
+/// Output of a deprovision call. Includes the YAML removal snippet the
+/// operator applies to the hub's `policy.yaml` + the fleet manifest.
+#[derive(Debug, Clone, Serialize)]
+pub struct TenantDeprovisioned {
+    pub name: String,
+    pub hub_policy_removal_snippet: String,
+    pub fleet_manifest_removal_snippet: String,
+    pub steps_completed: Vec<String>,
+    pub warnings: Vec<String>,
+}
+
 /// Bundle of clients the provisioner needs.
 #[derive(Clone)]
 pub struct ProvisionDeps {
@@ -239,6 +250,82 @@ pub async fn provision(req: &TenantRequest, deps: &ProvisionDeps) -> Result<Tena
         paired_bearer: paired,
         hub_policy_snippet: snippet,
         steps_completed: steps,
+    })
+}
+
+/// Reverse the provisioning sequence. Best-effort — every step is
+/// tolerant of "already absent" (404, missing state). Returns warnings
+/// for any non-fatal issues so the UI can surface them.
+///
+/// `mcp_scopes` is the scope list to clean up (matches what `provision`
+/// was given). Pass the original list or the empty vec if you don't know;
+/// missing-role 404s are absorbed as warnings either way.
+pub async fn deprovision(
+    name: &str,
+    mcp_scopes: &[String],
+    secret_prefix: &str,
+    deps: &ProvisionDeps,
+) -> Result<TenantDeprovisioned> {
+    let mut steps = Vec::new();
+    let mut warnings = Vec::new();
+
+    // 1. LiteLLM virtual key — fetch first, then call delete.
+    let litellm_path = format!("{}/{}/litellm", secret_prefix, name);
+    match deps.bao.kv_get_field(&litellm_path, "api_key").await {
+        Ok(key) => {
+            if let Err(e) = deps.litellm.delete_key(&key).await {
+                warnings.push(format!("litellm delete_key: {e}"));
+            } else {
+                steps.push("litellm:deleted".into());
+            }
+        }
+        Err(e) => warnings.push(format!("could not read litellm key for delete: {e}")),
+    }
+
+    // 2. Authentik OAuth provider + application.
+    if let Err(e) = deps.authentik.delete_oauth(name).await {
+        warnings.push(format!("authentik delete_oauth: {e}"));
+    } else {
+        steps.push("authentik:deleted".into());
+    }
+
+    // 3. bao secrets — litellm + papehouse + auth.
+    for sub in &["litellm", "papehouse", "auth"] {
+        let p = format!("{}/{}/{}", secret_prefix, name, sub);
+        match deps.bao.kv_delete(&p).await {
+            Ok(()) => steps.push(format!("bao:deleted:{p}")),
+            Err(e) => warnings.push(format!("bao kv_delete {p}: {e}")),
+        }
+    }
+
+    // 4. bao JWT roles per scope.
+    for scope in mcp_scopes {
+        let role = format!("mcp-{scope}-{name}");
+        match deps.bao.jwt_role_delete(&role).await {
+            Ok(()) => steps.push(format!("jwt:deleted:{role}")),
+            Err(e) => warnings.push(format!("jwt_role_delete {role}: {e}")),
+        }
+    }
+
+    // 5. Wipe state dir for the tenant.
+    let dir = deps.state_dir.join("tenants").join(name);
+    if dir.exists() {
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) => steps.push("state:wiped".into()),
+            Err(e) => warnings.push(format!("remove state dir {}: {e}", dir.display())),
+        }
+    } else {
+        steps.push("state:already_absent".into());
+    }
+
+    Ok(TenantDeprovisioned {
+        name: name.to_string(),
+        hub_policy_removal_snippet: hub_policy::build_removal_snippet(name),
+        fleet_manifest_removal_snippet: format!(
+            "# Remove `- {name}` from fleet.yaml `claws:` list, and delete claws/{name}.toml.\n# Then commit + push.\n"
+        ),
+        steps_completed: steps,
+        warnings,
     })
 }
 

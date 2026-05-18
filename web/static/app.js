@@ -31,6 +31,94 @@
       const r = await fetch(`/api/claws/${encodeURIComponent(claw)}/restart`, { method: "POST" });
       if (!r.ok) alert(`Restart failed: ${r.status}`);
     });
+    setupDeleteModal(claw);
+  }
+
+  function setupDeleteModal(name) {
+    const modal = document.getElementById("delete-modal");
+    const result = document.getElementById("delete-result");
+    if (!modal || !result) return;
+
+    document.getElementById("delete-name").textContent = name;
+    document.getElementById("delete-container").textContent = `claw-${name}`;
+    document.getElementById("delete-volume").textContent = `claw-data-${name}`;
+    document.getElementById("delete-authentik").textContent = `mcp-${name}`;
+    document.getElementById("delete-bao").textContent = `secret/services/${name}/{litellm,papehouse,auth}`;
+    document.getElementById("delete-typehint").textContent = name;
+
+    const openBtn = document.getElementById("delete");
+    const cancelBtn = document.getElementById("delete-cancel");
+    const confirmInput = document.getElementById("delete-confirm");
+    const confirmBtn = document.getElementById("delete-confirm-btn");
+    const closeResult = document.getElementById("delete-result-close");
+
+    openBtn.addEventListener("click", () => {
+      confirmInput.value = "";
+      confirmBtn.disabled = true;
+      modal.showModal();
+      confirmInput.focus();
+    });
+    cancelBtn.addEventListener("click", () => modal.close());
+    closeResult.addEventListener("click", () => result.close());
+    confirmInput.addEventListener("input", () => {
+      confirmBtn.disabled = confirmInput.value !== name;
+    });
+
+    document.getElementById("delete-form").addEventListener("submit", async (ev) => {
+      if (confirmInput.value !== name) { ev.preventDefault(); return; }
+      ev.preventDefault();
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = "Deleting…";
+
+      // Best-effort scope list — read from the overlay so we clean up
+      // bao JWT roles. If we can't get it, send empty (jwt_role_delete
+      // absorbs 404s as warnings).
+      let scopes = [];
+      try {
+        const r = await fetch(`/api/configs/claws/${encodeURIComponent(name)}`);
+        if (r.ok) {
+          const cfg = await r.json();
+          const m = (cfg.content || "").match(/mcp_scopes\s*=\s*\[([^\]]+)\]/);
+          if (m) {
+            scopes = m[1].split(",").map(s => s.trim().replace(/['"]/g, "")).filter(Boolean);
+          }
+        }
+      } catch (e) { /* tolerable */ }
+
+      let out;
+      try {
+        const r = await fetch(`/api/tenants/${encodeURIComponent(name)}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ confirm: name, purge_container: true, mcp_scopes: scopes }),
+        });
+        out = await r.json();
+        if (!r.ok && r.status !== 206) {
+          throw new Error(out.error || `HTTP ${r.status}`);
+        }
+      } catch (e) {
+        alert(`Delete failed: ${e.message}`);
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = "Delete";
+        return;
+      }
+
+      modal.close();
+      document.getElementById("delete-steps").innerHTML =
+        (out.steps_completed || []).map(s => `<li>${escapeHtml(s)}</li>`).join("") || "<li><em>(none)</em></li>";
+      document.getElementById("delete-warnings").innerHTML =
+        (out.warnings || []).length
+          ? out.warnings.map(s => `<li>${escapeHtml(s)}</li>`).join("")
+          : "<li><em>(none)</em></li>";
+      const snippet =
+        (out.hub_policy_removal_snippet || "") +
+        "\n" +
+        (out.fleet_manifest_removal_snippet || "");
+      document.getElementById("delete-snippet").textContent = snippet.trim() || "(no manual steps required)";
+      result.showModal();
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = "Delete";
+    });
   }
 
   // ---------------------------------------------------------------

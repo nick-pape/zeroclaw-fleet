@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use axum::Router;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use tokio::sync::RwLock;
 
 use std::collections::HashMap;
@@ -60,6 +60,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/claws/{name}/cost", get(cost::per_claw))
         .route("/api/cost", get(cost::fleet))
         .route("/api/tenants", post(tenants::create))
+        .route("/api/tenants/{name}", delete(tenants::delete_tenant))
         .route("/api/configs", get(configs::list))
         .route("/api/configs/base", get(configs::base))
         .route("/api/configs/fleet", get(configs::fleet))

@@ -24,9 +24,54 @@
       <div class="actions">
         <a id="open-new-tab" href="#" target="_blank" rel="noopener">Open in new tab ↗</a>
         <button id="restart" type="button">Restart</button>
+        <button id="delete" type="button" class="danger">Delete…</button>
       </div>
     </header>
     <iframe id="claw-iframe" class="claw-iframe" src="" title="claw dashboard"></iframe>
+
+    <dialog id="delete-modal" class="modal">
+      <form id="delete-form" method="dialog">
+        <h3>Delete <span id="delete-name"></span>?</h3>
+        <p class="warn">
+          This is <strong>destructive</strong>. The following will be removed:
+        </p>
+        <ul class="warn-list">
+          <li>Docker container <code id="delete-container"></code></li>
+          <li>Docker volume <code id="delete-volume"></code> — memory db + sessions <strong>lost</strong></li>
+          <li>LiteLLM virtual key (billing record kept; budget freed)</li>
+          <li>Authentik OAuth2 provider + application <code id="delete-authentik"></code></li>
+          <li>OpenBao secrets under <code id="delete-bao"></code></li>
+        </ul>
+        <p class="warn">
+          You will get a YAML snippet to apply by hand for:
+        </p>
+        <ul class="warn-list">
+          <li>Removing the identity from <code>mcp.service.pape.house/policy.yaml</code></li>
+          <li>Removing the claw from <code>fleet.yaml</code> + deleting the overlay file</li>
+        </ul>
+        <p>
+          Type <code id="delete-typehint"></code> to confirm:
+        </p>
+        <input id="delete-confirm" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <menu class="modal-actions">
+          <button type="button" id="delete-cancel">Cancel</button>
+          <button type="submit" id="delete-confirm-btn" disabled class="danger">Delete</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="delete-result" class="modal modal-wide">
+      <h3>Deletion result</h3>
+      <h4>Steps completed</h4>
+      <ul id="delete-steps" class="step-list"></ul>
+      <h4>Warnings</h4>
+      <ul id="delete-warnings" class="step-list warn-list"></ul>
+      <h4>Apply by hand</h4>
+      <pre id="delete-snippet" class="config-content"></pre>
+      <menu class="modal-actions">
+        <button type="button" id="delete-result-close">Close</button>
+      </menu>
+    </dialog>
   </main>
 </div>
 <script src="/static/app.js"></script>

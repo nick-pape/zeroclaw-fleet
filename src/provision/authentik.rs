@@ -71,6 +71,56 @@ impl AuthentikClient {
             .ok_or_else(|| anyhow!("no authentik provider named {name}"))
     }
 
+    /// Delete a per-tenant OAuth2 provider + its bound application.
+    /// Idempotent — silently succeeds on 404. Deletes the application
+    /// first (parent of the binding) then the provider.
+    pub async fn delete_oauth(&self, tenant: &str) -> Result<()> {
+        let name = format!("mcp-{tenant}");
+        // Application by slug (slug = name in our convention).
+        let app_url = format!("{}/api/v3/core/applications/{name}/", self.base_url);
+        let app_resp = self
+            .http
+            .delete(&app_url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await
+            .context("authentik DELETE application")?;
+        let app_status = app_resp.status();
+        if !app_status.is_success() && app_status.as_u16() != 404 {
+            let body = app_resp.text().await.unwrap_or_default();
+            return Err(anyhow!("authentik DELETE application {app_url} -> {app_status}: {body}"));
+        }
+
+        // Provider — fetched by name to get its pk, then deleted.
+        let lookup = format!("{}/api/v3/providers/oauth2/?name={}", self.base_url, urlencoding(&name));
+        let resp = self
+            .http
+            .get(&lookup)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await
+            .context("authentik GET provider for delete")?;
+        if resp.status().is_success() {
+            let page: AuthentikPaginated<AuthentikOAuthProvider> = resp.json().await?;
+            if let Some(p) = page.results.into_iter().next() {
+                let url = format!("{}/api/v3/providers/oauth2/{}/", self.base_url, p.pk);
+                let dr = self
+                    .http
+                    .delete(&url)
+                    .header("Authorization", self.auth_header())
+                    .send()
+                    .await
+                    .context("authentik DELETE provider")?;
+                let dr_status = dr.status();
+                if !dr_status.is_success() && dr_status.as_u16() != 404 {
+                    let body = dr.text().await.unwrap_or_default();
+                    return Err(anyhow!("authentik DELETE provider {url} -> {dr_status}: {body}"));
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Create a per-tenant OAuth2/OIDC provider and bind a new application
     /// to it. Returns the created provider's pk + the client_secret
     /// Authentik auto-generated.
@@ -146,6 +196,7 @@ struct AuthentikPaginated<T> {
 #[derive(Debug, Deserialize)]
 struct AuthentikOAuthProvider {
     pk: i64,
+    #[serde(default)]
     client_secret: String,
 }
 
