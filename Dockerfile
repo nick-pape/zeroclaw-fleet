@@ -19,7 +19,6 @@ RUN mkdir -p src && echo "fn main(){}" > src/main.rs \
 # Full build.
 COPY src ./src
 COPY web ./web
-COPY tests ./tests
 RUN --mount=type=cache,target=/work/target,id=fleet-target \
     --mount=type=cache,target=/usr/local/cargo/registry,id=fleet-cargo-reg \
     cargo build --release --locked --bin zeroclaw-fleet \
