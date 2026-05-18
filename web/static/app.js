@@ -143,10 +143,12 @@
       }
     });
     // Iframe loads the claw's native dashboard at its own subdomain so the
-    // SPA's relative /api/* paths work without rewriting.
+    // SPA's relative /api/* paths work without rewriting. Land on the
+    // chat surface (/agent) directly — the dashboard's other tabs are
+    // reachable from the in-SPA navigation.
     fetch("/api/config").then(r => r.ok ? r.json() : null).then(cfg => {
       const suffix = (cfg && cfg.claw_suffix) || guessSuffixFromHost();
-      const url = `${window.location.protocol}//${name}.${suffix}/`;
+      const url = `${window.location.protocol}//${name}.${suffix}/agent`;
       const iframe = document.getElementById("claw-iframe");
       iframe.src = url;
       document.getElementById("open-new-tab").href = url;
