@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZeroClaw Fleet — claw</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h1><a href="/" class="home">ZeroClaw Fleet</a></h1>
+      <div id="fleet-cost" class="fleet-cost">— / —</div>
+    </div>
+    <nav id="claw-list" class="claw-list">
+      <div class="empty">Loading…</div>
+    </nav>
+  </aside>
+  <main class="main main-iframe">
+    <header class="topbar">
+      <h2 id="page-title">claw</h2>
+      <div class="actions">
+        <a id="open-new-tab" href="#" target="_blank" rel="noopener">Open in new tab ↗</a>
+        <button id="restart" type="button">Restart</button>
+      </div>
+    </header>
+    <iframe id="claw-iframe" class="claw-iframe" src="" title="claw dashboard"></iframe>
+  </main>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZeroClaw Fleet</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h1>ZeroClaw Fleet</h1>
+      <div id="fleet-cost" class="fleet-cost">— / —</div>
+    </div>
+    <nav id="claw-list" class="claw-list">
+      <div class="empty">Loading…</div>
+    </nav>
+  </aside>
+  <main id="main" class="main">
+    <header class="topbar">
+      <h2 id="page-title">Dashboard</h2>
+      <div class="actions">
+        <button id="refresh" type="button">Refresh</button>
+      </div>
+    </header>
+    <section id="dashboard" class="panel">
+      <h3>Fleet rollup</h3>
+      <table class="rollup">
+        <tbody>
+          <tr><td>Claws</td><td id="r-claws">—</td></tr>
+          <tr><td>Stale</td><td id="r-stale">—</td></tr>
+          <tr><td>Session cost (USD)</td><td id="r-session">—</td></tr>
+          <tr><td>Today (USD)</td><td id="r-daily">—</td></tr>
+          <tr><td>Month-to-date (USD)</td><td id="r-monthly">—</td></tr>
+          <tr><td>Total tokens</td><td id="r-tokens">—</td></tr>
+          <tr><td>Total requests</td><td id="r-requests">—</td></tr>
+        </tbody>
+      </table>
+      <p class="hint">Select a claw on the left to open its dashboard.</p>
+    </section>
+  </main>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

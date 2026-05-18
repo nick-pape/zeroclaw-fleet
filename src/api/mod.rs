@@ -52,6 +52,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/claws/:name/cost", get(cost::per_claw))
         .route("/api/cost", get(cost::fleet))
         .route("/api/tenants", post(tenants::create))
+        .merge(crate::web::router())
         .with_state(state)
 }
 
