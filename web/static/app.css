@@ -315,3 +315,67 @@ body {
 }
 
 .step-list li { margin: 2px 0; }
+
+.form-stack {
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.form-stack label { display: block; }
+
+.form-stack .label {
+  display: block;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.form-stack .label-hint {
+  text-transform: none;
+  letter-spacing: 0;
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  opacity: 0.85;
+}
+
+.form-stack input {
+  width: 100%;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 7px 10px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.form-stack input:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+  border-color: var(--accent);
+}
+
+.form-stack .row { display: flex; gap: 12px; }
+.form-stack .grow { flex: 1; }
+
+.form-actions { margin-top: 8px; }
+
+.form-actions button {
+  background: var(--accent);
+  color: var(--bg);
+  border: 0;
+  padding: 8px 18px;
+  border-radius: 4px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.form-actions button[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

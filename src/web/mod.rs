@@ -26,6 +26,7 @@ pub fn router() -> Router<AppState> {
         .route("/", get(index))
         .route("/claws/{name}", get(claw_chrome))
         .route("/configs", get(configs_page))
+        .route("/tenants/new", get(new_tenant_page))
         .route("/static/{*path}", get(static_asset))
         .route("/api/config", get(public_config))
 }
@@ -42,6 +43,10 @@ async fn claw_chrome(Path(_name): Path<String>) -> Response<Body> {
 
 async fn configs_page() -> Response<Body> {
     serve("configs.html")
+}
+
+async fn new_tenant_page() -> Response<Body> {
+    serve("new.html")
 }
 
 async fn static_asset(Path(path): Path<String>) -> Response<Body> {
@@ -93,8 +98,10 @@ mod tests {
         assert!(WebAssets::get("index.html").is_some(), "index.html embedded");
         assert!(WebAssets::get("claw.html").is_some(), "claw.html embedded");
         assert!(WebAssets::get("configs.html").is_some(), "configs.html embedded");
+        assert!(WebAssets::get("new.html").is_some(), "new.html embedded");
         assert!(WebAssets::get("static/app.css").is_some(), "app.css embedded");
         assert!(WebAssets::get("static/app.js").is_some(), "app.js embedded");
         assert!(WebAssets::get("static/configs.js").is_some(), "configs.js embedded");
+        assert!(WebAssets::get("static/new.js").is_some(), "new.js embedded");
     }
 }

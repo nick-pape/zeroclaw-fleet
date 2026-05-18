@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZeroClaw Fleet — new claw</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h1><a href="/" class="home">ZeroClaw Fleet</a></h1>
+      <div class="sub">
+        <a href="/configs">Configs</a>
+        <a href="/tenants/new" class="active-link">New claw</a>
+      </div>
+    </div>
+    <nav id="claw-list" class="claw-list">
+      <div class="empty">Loading…</div>
+    </nav>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <h2>Provision a new claw</h2>
+    </header>
+    <section class="panel">
+      <form id="new-form" class="form-stack">
+        <label>
+          <span class="label">Name <span class="label-hint">kebab-case, e.g. <code>weather</code></span></span>
+          <input name="name" required pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" placeholder="weather">
+        </label>
+        <label>
+          <span class="label">Display name <span class="label-hint">friendly label shown in the sidebar</span></span>
+          <input name="display_name" placeholder="Weather Wally">
+        </label>
+        <label>
+          <span class="label">MCP scopes <span class="label-hint">comma-separated; must already exist in hub <code>policy.yaml</code> <code>mcps:</code></span></span>
+          <input name="mcp_scopes" required placeholder="weather,searxng">
+        </label>
+        <label>
+          <span class="label">Monthly LiteLLM budget (USD)</span>
+          <input name="monthly_budget_usd" type="number" min="1" step="1" value="100">
+        </label>
+        <label>
+          <span class="label">Hub identity <code>uid_base</code> <span class="label-hint">pick the next free integer above the existing <code>uid_base</code> values in the hub <code>policy.yaml</code></span></span>
+          <input name="uid_base" type="number" min="1000" step="1" value="1100" required>
+        </label>
+        <div class="row">
+          <label class="grow">
+            <span class="label">Theme</span>
+            <input name="default_color_theme" placeholder="dark">
+          </label>
+          <label class="grow">
+            <span class="label">Accent</span>
+            <input name="default_accent" placeholder="">
+          </label>
+        </div>
+        <label>
+          <span class="label">Allowed models <span class="label-hint">empty = all LiteLLM-fronted models</span></span>
+          <input name="models" placeholder="gpt-4o,claude-3.5-sonnet">
+        </label>
+
+        <div id="form-error" class="warn" style="display:none"></div>
+
+        <div class="form-actions">
+          <button type="submit" id="provision-btn">Provision</button>
+        </div>
+      </form>
+    </section>
+
+    <dialog id="provision-result" class="modal modal-wide">
+      <h3 id="provision-result-title">Tenant created</h3>
+      <h4>Steps completed</h4>
+      <ul id="provision-steps" class="step-list"></ul>
+      <h4>Append to <code>mcp.service.pape.house/policy.yaml</code> under <code>identities:</code></h4>
+      <pre id="provision-hub-snippet" class="config-content"></pre>
+      <h4>Then add the overlay + manifest entry</h4>
+      <pre id="provision-overlay-snippet" class="config-content"></pre>
+      <p class="hint">After committing + pushing those, refresh this orchestrator and the new claw appears in the sidebar.</p>
+      <menu class="modal-actions">
+        <a id="provision-overlay-link" href="#" target="_blank" rel="noopener" style="display:none">Open repo ↗</a>
+        <button type="button" id="provision-result-close">Close</button>
+      </menu>
+    </dialog>
+  </main>
+</div>
+<script src="/static/new.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
