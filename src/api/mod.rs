@@ -11,9 +11,12 @@ use axum::Router;
 use axum::routing::{get, post};
 use tokio::sync::RwLock;
 
+use std::collections::HashMap;
+
 use crate::config::OrchestratorConfig;
 use crate::cost_poller::CostCache;
 use crate::driver::docker::DockerDriver;
+use crate::manifest::ClawOverlay;
 use crate::provision::ProvisionDeps;
 
 pub mod claws;
@@ -31,6 +34,10 @@ pub struct AppState {
     /// Active claw list (mirror of `fleet.yaml` `claws:`). Mutated by the
     /// manifest reload path; read by every handler.
     pub claws: Arc<RwLock<Vec<String>>>,
+    /// Parsed claw overlays keyed by claw name. Mirror of disk; reloaded
+    /// when the manifest changes. Lets handlers surface fields like
+    /// `branding.display_name` without re-reading TOML per request.
+    pub overlays: Arc<RwLock<HashMap<String, ClawOverlay>>>,
     pub http: reqwest::Client,
     /// Set when bao + Authentik + LiteLLM bootstrap succeeded at startup.
     /// `None` means ops endpoints work but `/api/tenants` returns 503.

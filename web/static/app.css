@@ -91,6 +91,7 @@ body {
 }
 
 .claw-list .name { font-weight: 500; }
+.claw-list .slug { font-size: 11px; color: var(--text-dim); font-variant: small-caps; }
 .claw-list .meta { font-size: 11px; color: var(--text-dim); display: block; }
 .claw-list .health { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
 .claw-list .health-healthy { background: var(--good); }

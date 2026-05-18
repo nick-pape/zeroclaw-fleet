@@ -83,6 +83,20 @@ pub struct ClawOverlay {
 }
 
 impl ClawOverlay {
+    /// Friendly name from `[branding] display_name`, if set. Falls back to
+    /// the kebab `_fleet.name` so the UI always has something to render.
+    pub fn display_name(&self) -> String {
+        self.body
+            .get("branding")
+            .and_then(|v| v.as_table())
+            .and_then(|t| t.get("display_name"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| self.fleet.name.clone())
+    }
+}
+
+impl ClawOverlay {
     /// Parse a claw overlay from a TOML string.
     pub fn from_str(src: &str) -> Result<Self> {
         let mut table: toml::Table = toml::from_str(src).context("parse overlay TOML")?;
@@ -156,6 +170,37 @@ display_name = "Alpha"
         assert!(o.body.contains_key("providers"));
         assert!(o.body.contains_key("branding"));
         assert!(!o.body.contains_key("_fleet"));
+    }
+
+    #[test]
+    fn display_name_prefers_branding_field() {
+        let with_branding = ClawOverlay::from_str(r#"
+[_fleet]
+name = "grocery"
+[branding]
+display_name = "H-E-Buddy"
+"#).unwrap();
+        assert_eq!(with_branding.display_name(), "H-E-Buddy");
+    }
+
+    #[test]
+    fn display_name_falls_back_to_kebab_name() {
+        let no_branding = ClawOverlay::from_str(r#"
+[_fleet]
+name = "alpha"
+"#).unwrap();
+        assert_eq!(no_branding.display_name(), "alpha");
+    }
+
+    #[test]
+    fn display_name_falls_back_when_branding_table_lacks_field() {
+        let partial = ClawOverlay::from_str(r#"
+[_fleet]
+name = "beta"
+[branding]
+default_color_theme = "dark"
+"#).unwrap();
+        assert_eq!(partial.display_name(), "beta");
     }
 
     #[test]

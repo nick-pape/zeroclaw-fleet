@@ -195,16 +195,15 @@ async fn serve(args: ServeArgs) -> Result<()> {
             .context("connect to docker daemon at startup")?,
     );
 
-    let claws = match try_load_claw_list(&cfg.fleet_dir) {
-        Ok(list) => {
-            info!(count = list.len(), "loaded claw list from fleet.yaml");
-            Arc::new(RwLock::new(list))
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "no fleet.yaml or unreadable; starting with empty fleet");
-            Arc::new(RwLock::new(Vec::new()))
-        }
-    };
+    let claw_list = try_load_claw_list(&cfg.fleet_dir).unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "no fleet.yaml or unreadable; starting with empty fleet");
+        Vec::new()
+    });
+    info!(count = claw_list.len(), "loaded claw list from fleet.yaml");
+    let overlay_map = load_overlays(&cfg.fleet_dir, &claw_list);
+    info!(count = overlay_map.len(), "loaded claw overlays");
+    let claws = Arc::new(RwLock::new(claw_list));
+    let overlays = Arc::new(RwLock::new(overlay_map));
 
     let cost_cache = cost_poller::new_cache();
     let http = reqwest::Client::builder()
@@ -225,6 +224,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
         driver,
         cost_cache,
         claws,
+        overlays,
         http: http.clone(),
         provision,
     };
@@ -244,6 +244,22 @@ fn try_load_claw_list(fleet_dir: &PathBuf) -> Result<Vec<String>> {
     let path = fleet_dir.join("fleet.yaml");
     let m = manifest::FleetManifest::from_path(&path)?;
     Ok(m.claws)
+}
+
+/// Load per-claw overlays from `<fleet_dir>/claws/<name>.toml`. Skips
+/// (with a warning) any that fail to parse — degrades the UI to using
+/// the kebab name as display_name, but keeps the rest of the orchestrator
+/// running.
+fn load_overlays(fleet_dir: &PathBuf, names: &[String]) -> std::collections::HashMap<String, manifest::ClawOverlay> {
+    let mut out = std::collections::HashMap::with_capacity(names.len());
+    for name in names {
+        let p = fleet_dir.join("claws").join(format!("{name}.toml"));
+        match manifest::ClawOverlay::from_path(&p) {
+            Ok(o) => { out.insert(name.clone(), o); }
+            Err(e) => tracing::warn!(claw = %name, error = %e, "failed to load overlay {}", p.display()),
+        }
+    }
+    out
 }
 
 /// Try to bootstrap the provisioning clients from bao. Returns None if

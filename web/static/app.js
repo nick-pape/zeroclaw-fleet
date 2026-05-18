@@ -46,6 +46,14 @@
 
   function setupClawView(name) {
     document.getElementById("page-title").textContent = name;
+    // Once the claw list lands, swap in the friendly display_name.
+    fetch("/api/claws").then(r => r.ok ? r.json() : []).then(list => {
+      const entry = (list || []).find(e => e.name === name);
+      if (entry && entry.display_name && entry.display_name !== name) {
+        document.getElementById("page-title").textContent = `${entry.display_name} (${name})`;
+        document.title = `${entry.display_name} — ZeroClaw Fleet`;
+      }
+    });
     // Iframe loads the claw's native dashboard at its own subdomain so the
     // SPA's relative /api/* paths work without rewriting.
     fetch("/api/config").then(r => r.ok ? r.json() : null).then(cfg => {
@@ -90,10 +98,14 @@
       const cost = entry.status && entry.status.daily_cost_usd != null
         ? `$${entry.status.daily_cost_usd.toFixed(2)}/day`
         : "";
+      // Use [branding] display_name when present (e.g. "H-E-Buddy"); fall
+      // back to the kebab identifier (e.g. "grocery").
+      const label = entry.display_name || entry.name;
+      const slug = label !== entry.name ? `<span class="slug">${escapeHtml(entry.name)}</span>` : "";
       return `
         <a class="${active}" href="/claws/${encodeURIComponent(entry.name)}">
           <span class="health health-${health}"></span>
-          <span class="name">${escapeHtml(entry.name)}</span>
+          <span class="name">${escapeHtml(label)}</span> ${slug}
           <span class="meta">${escapeHtml(health)}${cost ? " · " + escapeHtml(cost) : ""}</span>
         </a>`;
     }).join("");
