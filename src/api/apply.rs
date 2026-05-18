@@ -137,12 +137,37 @@ fn ensure_bearer(state: &AppState, name: &str) -> Result<Bearer> {
     Ok(Bearer { value: new, is_new: true })
 }
 
+/// UID:GID matching ZeroClaw's distroless image (`nobody:nogroup`). The
+/// claw container runs as this user, so its bind-mounted config dir must
+/// be owned by it.
+const CLAW_UID: u32 = 65534;
+const CLAW_GID: u32 = 65534;
+
 fn write_atomic(path: &PathBuf, content: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).context("create config dir")?;
+        // Make the WHOLE per-claw subtree owned by the claw user, mode 700.
+        // Walk up to <state_dir>/<claw>/ inclusive (one level above
+        // /config). Idempotent — chown is fast and safe to repeat.
+        if let Some(claw_dir) = parent.parent() {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::os::unix::fs::lchown(claw_dir, Some(CLAW_UID), Some(CLAW_GID));
+                let _ = std::os::unix::fs::lchown(parent, Some(CLAW_UID), Some(CLAW_GID));
+                let _ = std::fs::set_permissions(claw_dir, std::fs::Permissions::from_mode(0o700));
+                let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+            }
+        }
     }
     let tmp = path.with_extension("toml.tmp");
     std::fs::write(&tmp, content).context("write tmp")?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
+        let _ = std::os::unix::fs::lchown(&tmp, Some(CLAW_UID), Some(CLAW_GID));
+    }
     std::fs::rename(&tmp, path).context("rename into place")?;
     Ok(())
 }

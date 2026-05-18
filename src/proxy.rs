@@ -164,14 +164,33 @@ pub async fn forward_http(
 
 /// Upgrade an incoming WS connection and splice it bidirectionally with
 /// an upstream WS connection to the named claw.
+///
+/// Subprotocol handling: the ZeroClaw web SPA opens its chat WS as
+/// `new WebSocket(url, ['zeroclaw.v1', 'bearer.<token>'])`. The server
+/// MUST echo a selected subprotocol in the 101 response or the browser
+/// rejects with code 1006 ("connection closed abnormally") right after
+/// the handshake. This proxy:
+///   1. Reads the client's requested protocols from
+///      `Sec-WebSocket-Protocol`.
+///   2. Passes them to `WebSocketUpgrade::protocols()` so axum echoes
+///      the negotiated one in its 101 to the browser.
+///   3. Sends the same `Sec-WebSocket-Protocol` header to the upstream
+///      so the upstream server picks the matching one.
 pub async fn forward_ws(
     upgrade: WebSocketUpgrade,
     cfg: ProxyConfig,
     claw: String,
     path_and_query: String,
+    client_protocols: Vec<String>,
 ) -> Response<Body> {
+    let upgrade = if client_protocols.is_empty() {
+        upgrade
+    } else {
+        upgrade.protocols(client_protocols.clone())
+    };
+    let protocols_header = client_protocols.join(", ");
     upgrade.on_upgrade(move |socket| async move {
-        if let Err(e) = pump_ws(cfg, claw, path_and_query, socket).await {
+        if let Err(e) = pump_ws(cfg, claw, path_and_query, socket, protocols_header).await {
             tracing::warn!(error = %e, "ws proxy ended with error");
         }
     })
@@ -182,9 +201,18 @@ async fn pump_ws(
     claw: String,
     path_and_query: String,
     client: WebSocket,
+    protocols_header: String,
 ) -> Result<()> {
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
     let upstream_url = format!("ws://claw-{claw}:{}{path_and_query}", cfg.claw_port);
-    let (upstream, _resp) = tokio_tungstenite::connect_async(&upstream_url).await?;
+    let mut req = upstream_url.as_str().into_client_request()?;
+    if !protocols_header.is_empty() {
+        req.headers_mut().insert(
+            "Sec-WebSocket-Protocol",
+            HeaderValue::from_str(&protocols_header)?,
+        );
+    }
+    let (upstream, _resp) = tokio_tungstenite::connect_async(req).await?;
 
     let (mut client_tx, mut client_rx) = client.split();
     let (mut up_tx, mut up_rx) = upstream.split();
@@ -271,6 +299,15 @@ pub async fn maybe_proxy(
                     .path_and_query()
                     .map(|p| p.to_string())
                     .unwrap_or_else(|| "/".into());
+                // Extract Sec-WebSocket-Protocol BEFORE consuming req — the
+                // browser passes subprotocols here that the server must echo
+                // back or the connection fails 1006 after the 101.
+                let client_protocols: Vec<String> = req
+                    .headers()
+                    .get("sec-websocket-protocol")
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.split(',').map(|p| p.trim().to_string()).collect())
+                    .unwrap_or_default();
                 let (parts, body) = req.into_parts();
                 // Reassemble enough of the request for axum's extractor.
                 let req = Request::from_parts(parts, body);
@@ -281,7 +318,7 @@ pub async fn maybe_proxy(
                         return Ok((StatusCode::BAD_REQUEST, "ws upgrade failed").into_response());
                     }
                 };
-                return Ok(forward_ws(upgrade, cfg.clone(), claw, path_and_query).await);
+                return Ok(forward_ws(upgrade, cfg.clone(), claw, path_and_query, client_protocols).await);
             }
 
             let (parts, body) = req.into_parts();
