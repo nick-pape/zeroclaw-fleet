@@ -71,6 +71,24 @@ pub struct FleetMetadata {
     /// into the fleet without re-minting credentials.
     #[serde(default)]
     pub import: bool,
+
+    /// Override the bao path the bearer rotation task reads for this claw's
+    /// Authentik OAuth client_secret. Defaults to `services/<name>/papehouse`.
+    /// Shadow imports of legacy agents (e.g. grocery-agent, homeassistant-
+    /// agent) set this so the orchestrator finds the existing secret at the
+    /// legacy `services/<agent-full-name>/papehouse` path.
+    pub bao_papehouse_path: Option<String>,
+
+    /// Override the Authentik OAuth client_id used for client_credentials
+    /// grants. Defaults to `mcp-<name>`. Set on shadow imports whose
+    /// existing Authentik provider was named differently
+    /// (e.g. `mcp-grocery-agent`).
+    pub authentik_client_id: Option<String>,
+
+    /// Override the audience the rotation task asks Authentik to mint
+    /// against. Defaults to the client_id. The hub validates the JWT's
+    /// `aud` claim against this value.
+    pub authentik_audience: Option<String>,
 }
 
 /// Parsed claw overlay: orchestrator metadata + the raw merge body.

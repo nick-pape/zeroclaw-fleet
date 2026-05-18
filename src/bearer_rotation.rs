@@ -18,6 +18,7 @@ use tracing::{info, warn};
 use crate::config::OrchestratorConfig;
 use crate::driver::Driver;
 use crate::driver::docker::DockerDriver;
+use crate::manifest::ClawOverlay;
 use crate::provision::bao::BaoClient;
 
 /// Spawn the rotation task. Runs until process exit.
@@ -25,6 +26,7 @@ pub fn spawn(
     cfg: Arc<OrchestratorConfig>,
     driver: Arc<DockerDriver>,
     claws: Arc<RwLock<Vec<String>>>,
+    overlays: Arc<RwLock<std::collections::HashMap<String, ClawOverlay>>>,
     http: reqwest::Client,
     bao: Option<BaoClient>,
     authentik_token_url: String,
@@ -48,7 +50,20 @@ pub fn spawn(
         loop {
             tick.tick().await;
             let names = claws.read().await.clone();
+            let overlays_snapshot = overlays.read().await.clone();
             for name in names {
+                let secret_path = overlays_snapshot
+                    .get(&name)
+                    .and_then(|o| o.fleet.bao_papehouse_path.clone())
+                    .unwrap_or_else(|| format!("services/{name}/papehouse"));
+                let client_id = overlays_snapshot
+                    .get(&name)
+                    .and_then(|o| o.fleet.authentik_client_id.clone())
+                    .unwrap_or_else(|| format!("mcp-{name}"));
+                let audience = overlays_snapshot
+                    .get(&name)
+                    .and_then(|o| o.fleet.authentik_audience.clone())
+                    .unwrap_or_else(|| client_id.clone());
                 if let Err(e) = rotate_one(
                     &name,
                     &cfg,
@@ -57,6 +72,9 @@ pub fn spawn(
                     &bao,
                     &authentik_token_url,
                     refresh_window_secs,
+                    &secret_path,
+                    &client_id,
+                    &audience,
                 )
                 .await
                 {
@@ -75,6 +93,9 @@ async fn rotate_one(
     bao: &BaoClient,
     authentik_token_url: &str,
     refresh_window_secs: u64,
+    secret_path: &str,
+    client_id: &str,
+    audience: &str,
 ) -> Result<()> {
     let cfg_path = cfg.state_dir.join(name).join("config").join("config.toml");
     let content = std::fs::read_to_string(&cfg_path)
@@ -94,20 +115,18 @@ async fn rotate_one(
         return Ok(());
     }
 
-    // Pull the per-claw client_secret from bao. Path matches the existing
-    // homelab convention (memory: agent-durable-secrets).
-    let secret_path = format!("services/{name}/papehouse");
+    // Pull the per-claw client_secret from bao.
     let client_secret = bao
-        .kv_get_field(&secret_path, "client_secret")
+        .kv_get_field(secret_path, "client_secret")
         .await
         .with_context(|| format!("bao read {secret_path}.client_secret"))?;
 
-    // client_credentials grant. Authentik puts the scope name in `aud`.
-    let client_id = format!("mcp-{name}");
-    let scope = format!("openid {client_id}");
+    // client_credentials grant. Authentik puts the scope name in `aud`,
+    // so the scope IS the audience for our purposes.
+    let scope = format!("openid {audience}");
     let form = [
         ("grant_type", "client_credentials"),
-        ("client_id", client_id.as_str()),
+        ("client_id", client_id),
         ("client_secret", client_secret.as_str()),
         ("scope", scope.as_str()),
     ];

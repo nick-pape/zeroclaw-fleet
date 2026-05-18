@@ -245,6 +245,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
         cfg.clone(),
         driver.clone(),
         claws.clone(),
+        overlays.clone(),
         http.clone(),
         bao_for_rotation,
         token_url,
