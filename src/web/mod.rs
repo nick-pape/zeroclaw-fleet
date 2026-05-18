@@ -24,8 +24,8 @@ struct WebAssets;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(index))
-        .route("/claws/:name", get(claw_chrome))
-        .route("/static/*path", get(static_asset))
+        .route("/claws/{name}", get(claw_chrome))
+        .route("/static/{*path}", get(static_asset))
         .route("/api/config", get(public_config))
 }
 
