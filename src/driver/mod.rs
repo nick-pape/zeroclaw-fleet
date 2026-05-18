@@ -36,6 +36,10 @@ pub struct ClawSpec {
     /// the claw. Mounted read-write so the MCP bearer rotation task can
     /// rewrite atomically.
     pub config_dir: PathBuf,
+    /// Optional path on the host to an env-file containing `KEY=VALUE`
+    /// lines (e.g. `OPENAI_API_KEY=...`). Read by docker at start time;
+    /// keeps the secret out of compose env + container inspect output.
+    pub env_file: Option<PathBuf>,
     /// Name of a docker named volume that persists `/zeroclaw-data`
     /// (workspace, sqlite memory db, dashboard SPA). Survives container
     /// recreate.

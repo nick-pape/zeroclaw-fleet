@@ -36,6 +36,22 @@ pub struct OrchestratorConfig {
     /// set, the configs viewer attaches a "View on git" link to each
     /// file. Absent when running outside the canonical repo.
     pub repo_blob_base: Option<String>,
+    /// Default image used when neither `fleet.defaults.image` nor an
+    /// overlay's `_fleet.image` is set. Mirrors what the manifest's
+    /// `defaults.image` should hold in practice.
+    pub default_image: Option<String>,
+    /// Default memory limit (bytes) applied to every claw container.
+    pub default_mem_limit_bytes: Option<i64>,
+    /// Default CPU limit (1.0 = one core).
+    pub default_cpu_limit: Option<f64>,
+    /// Default docker restart policy.
+    pub default_restart: Option<String>,
+    /// Default `json-file` log rotation size (e.g. `"20m"`).
+    pub default_log_max_size: Option<String>,
+    /// Default number of rotated log files to keep.
+    pub default_log_max_file: Option<u32>,
+    /// Docker network all claws attach to. Created out-of-band.
+    pub claws_network: String,
 }
 
 impl OrchestratorConfig {

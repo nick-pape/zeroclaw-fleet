@@ -19,6 +19,7 @@ use crate::driver::docker::DockerDriver;
 use crate::manifest::ClawOverlay;
 use crate::provision::ProvisionDeps;
 
+pub mod apply;
 pub mod claws;
 pub mod configs;
 pub mod cost;
@@ -59,6 +60,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/claws/{name}/logs", get(logs::tail))
         .route("/api/claws/{name}/cost", get(cost::per_claw))
         .route("/api/cost", get(cost::fleet))
+        .route("/api/apply", post(apply::apply_all))
+        .route("/api/claws/{name}/up", post(apply::up_one))
         .route("/api/tenants", post(tenants::create))
         .route("/api/tenants/{name}", delete(tenants::delete_tenant))
         .route("/api/configs", get(configs::list))

@@ -185,6 +185,13 @@ async fn serve(args: ServeArgs) -> Result<()> {
         mcp_bearer_placeholder: args.mcp_bearer_placeholder.clone(),
         cost_poll_interval_secs: args.cost_poll_interval_secs,
         repo_blob_base: args.repo_blob_base.clone(),
+        default_image: None,
+        default_mem_limit_bytes: Some(1024 * 1024 * 1024),
+        default_cpu_limit: Some(1.0),
+        default_restart: Some("unless-stopped".into()),
+        default_log_max_size: Some("20m".into()),
+        default_log_max_file: Some(3),
+        claws_network: "claws-internal".into(),
     }
     .into_shared();
 

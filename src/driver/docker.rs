@@ -52,11 +52,33 @@ impl DockerDriver {
     /// Build the bollard `Config` that materializes a `ClawSpec`. Pulled out
     /// so unit tests can exercise the translation without a live daemon.
     pub fn build_config(spec: &ClawSpec) -> Config<String> {
-        let env: Vec<String> = spec
+        let mut env: Vec<String> = spec
             .env
             .iter()
             .map(|(k, v)| format!("{k}={v}"))
             .collect();
+
+        // Layer the env file on top of inline env vars. Same semantics as
+        // docker-compose's `env_file:` — lines `KEY=VALUE`, `#` comments
+        // ignored, blank lines ignored. Inline env wins on conflict
+        // (matches docker-compose).
+        if let Some(ef) = spec.env_file.as_ref() {
+            if let Ok(content) = std::fs::read_to_string(ef) {
+                let existing: std::collections::HashSet<String> = env
+                    .iter()
+                    .filter_map(|s| s.split_once('=').map(|(k, _)| k.to_string()))
+                    .collect();
+                for line in content.lines() {
+                    let line = line.trim();
+                    if line.is_empty() || line.starts_with('#') { continue; }
+                    let Some((k, _)) = line.split_once('=') else { continue };
+                    if existing.contains(k.trim()) { continue; }
+                    env.push(line.to_string());
+                }
+            } else {
+                tracing::warn!(env_file = %ef.display(), "env_file path unreadable; container starts without it");
+            }
+        }
 
         let mounts = vec![
             Mount {
@@ -372,6 +394,7 @@ mod tests {
             restart: "unless-stopped".into(),
             env,
             config_dir: PathBuf::from("/var/lib/zeroclaw-fleet/alpha/config"),
+            env_file: None,
             data_volume: "claw-data-alpha".into(),
             network: "claws-internal".into(),
             log: Default::default(),
