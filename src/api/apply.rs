@@ -191,10 +191,13 @@ fn build_spec(state: &AppState, overlay: &ClawOverlay, cfg_path: &PathBuf) -> Re
     env.insert("ZEROCLAW_GATEWAY_PORT".into(), state.cfg.proxy.claw_port.to_string());
     env.insert("ZEROCLAW_CONFIG_DIR".into(), "/zeroclaw-data/config".into());
 
-    // Per-claw env file discovery — same convention as today's per-CT
-    // /etc/<agent>/zeroclaw.env path, plus the explicit fleet shape.
+    // Per-claw env file discovery. Lives at /etc/zeroclaw-fleet-secrets/
+    // on the host (separate from /etc/zeroclaw-fleet/ to avoid colliding
+    // with the manifest's `claws/` subdir bind). Mounted at the same path
+    // inside the orchestrator container so existence check + the path
+    // passed to docker resolve to the same host file.
     let candidates = [
-        PathBuf::from(format!("/etc/zeroclaw-fleet/claws/{name}.env")),
+        PathBuf::from(format!("/etc/zeroclaw-fleet-secrets/{name}.env")),
     ];
     let env_file = candidates.into_iter().find(|p| p.exists());
 
