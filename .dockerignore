@@ -1,0 +1,9 @@
+target
+.git
+.github
+.gitignore
+*.md
+!README.md
+.vscode
+.idea
+.scratch
