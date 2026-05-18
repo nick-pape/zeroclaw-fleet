@@ -48,6 +48,7 @@ thiserror = "2"
 uuid = { version = "1", features = ["v4"] }
 sha2 = "0.10"
 hex = "0.4"
+base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }
 mime_guess = "2"
 

@@ -15,6 +15,7 @@ use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 mod api;
+mod bearer_rotation;
 mod config;
 mod cost_poller;
 mod driver;
@@ -232,6 +233,24 @@ async fn serve(args: ServeArgs) -> Result<()> {
         Some(_) => info!("provisioning bootstrap OK — /api/tenants enabled"),
         None => tracing::warn!("provisioning bootstrap incomplete — /api/tenants will return 503"),
     }
+
+    // MCP bearer rotation — only runs when bao is reachable (the same
+    // gate that decides whether `/api/tenants` works).
+    let bao_for_rotation = provision.as_ref().map(|d| d.bao.clone());
+    let token_url = format!(
+        "{}/application/o/token/",
+        args.authentik_url.as_deref().unwrap_or("https://auth.invalid")
+    );
+    bearer_rotation::spawn(
+        cfg.clone(),
+        driver.clone(),
+        claws.clone(),
+        http.clone(),
+        bao_for_rotation,
+        token_url,
+        /* refresh_window_secs */ 30 * 60,
+        /* poll_interval_secs   */ 5 * 60,
+    );
 
     let state = api::AppState {
         cfg: cfg.clone(),

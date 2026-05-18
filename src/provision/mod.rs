@@ -162,7 +162,9 @@ pub async fn provision(req: &TenantRequest, deps: &ProvisionDeps) -> Result<Tena
         steps.push("bao:litellm_already_written".into());
     }
 
-    // 3 + 4. Authentik provider + bao client_secret.
+    // 3 + 4. Authentik provider + bao client_secret. Secret path is
+    // `<prefix>/<tenant>/papehouse` to match the existing convention
+    // used by bootstrap-agent-secrets.sh (memory: agent-durable-secrets).
     let provider_pk = if let Some(pk) = state.authentik_provider_created {
         steps.push("authentik:already_created".into());
         pk
@@ -178,7 +180,7 @@ pub async fn provision(req: &TenantRequest, deps: &ProvisionDeps) -> Result<Tena
         let mut fields = BTreeMap::new();
         fields.insert("client_secret".into(), created.client_secret.clone());
         deps.bao
-            .kv_put(&format!("{}/{}/auth", req.secret_prefix, req.name), &fields)
+            .kv_put(&format!("{}/{}/papehouse", req.secret_prefix, req.name), &fields)
             .await
             .context("bao kv put auth")?;
         state.authentik_provider_created = Some(created.provider_pk);
@@ -289,8 +291,8 @@ pub async fn deprovision(
         steps.push("authentik:deleted".into());
     }
 
-    // 3. bao secrets — litellm + papehouse + auth.
-    for sub in &["litellm", "papehouse", "auth"] {
+    // 3. bao secrets — litellm + papehouse.
+    for sub in &["litellm", "papehouse"] {
         let p = format!("{}/{}/{}", secret_prefix, name, sub);
         match deps.bao.kv_delete(&p).await {
             Ok(()) => steps.push(format!("bao:deleted:{p}")),
