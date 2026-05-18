@@ -129,7 +129,8 @@
   }
 
   function setupDashboardView() {
-    document.getElementById("page-title").textContent = "Dashboard";
+    const t = document.getElementById("page-title");
+    if (t) t.textContent = "Dashboard";
   }
 
   function setupClawView(name) {
