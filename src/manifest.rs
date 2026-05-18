@@ -89,6 +89,27 @@ pub struct FleetMetadata {
     /// against. Defaults to the client_id. The hub validates the JWT's
     /// `aud` claim against this value.
     pub authentik_audience: Option<String>,
+
+    /// Container ports to publish to the CT host so external services can
+    /// reach this claw's inbound channels (webhook, voice, etc.). The
+    /// gateway port (42617) does NOT need to be here — it's reached
+    /// via the orchestrator's reverse-proxy at `<name>.claw.<suffix>`.
+    /// Use this for channel listeners that must be hit by something
+    /// outside the orchestrator's docker network (e.g. n8n on another
+    /// CT posting SMS to a `[channels.webhook]` listener).
+    #[serde(default)]
+    pub published_ports: Vec<PublishedPort>,
+}
+
+/// A single container→host port publish. Both fields default to nothing
+/// useful; both must be set.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PublishedPort {
+    /// Port inside the claw container (e.g. 42618 for webhook).
+    pub container: u16,
+    /// Port on the CT host to bind to. Pick a stable value per claw — the
+    /// operator manages this; the orchestrator just plumbs it through.
+    pub host: u16,
 }
 
 /// Parsed claw overlay: orchestrator metadata + the raw merge body.

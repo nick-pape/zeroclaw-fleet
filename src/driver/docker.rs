@@ -8,7 +8,7 @@ use bollard::container::{
 };
 use bollard::models::{
     ContainerSummary, EndpointSettings, HealthConfig, HostConfig, HostConfigLogConfig, Mount,
-    MountTypeEnum, RestartPolicy, RestartPolicyNameEnum,
+    MountTypeEnum, PortBinding, RestartPolicy, RestartPolicyNameEnum,
 };
 use bollard::secret::ContainerState;
 use bollard::volume::RemoveVolumeOptions;
@@ -101,6 +101,23 @@ impl DockerDriver {
         log_opts.insert("max-size".into(), spec.log.max_size.clone());
         log_opts.insert("max-file".into(), spec.log.max_file.to_string());
 
+        // Port bindings for published_ports. Each (container, host) pair
+        // becomes a host_port → container_port mapping. We also need to
+        // declare the container ports as "exposed" in the Config so docker
+        // knows about them.
+        let mut port_bindings: HashMap<String, Option<Vec<PortBinding>>> = HashMap::new();
+        let mut exposed_ports: HashMap<String, HashMap<(), ()>> = HashMap::new();
+        for (container_port, host_port) in &spec.published_ports {
+            port_bindings.insert(
+                format!("{container_port}/tcp"),
+                Some(vec![PortBinding {
+                    host_ip: Some("0.0.0.0".into()),
+                    host_port: Some(host_port.to_string()),
+                }]),
+            );
+            exposed_ports.insert(format!("{container_port}/tcp"), HashMap::new());
+        }
+
         let host_config = HostConfig {
             mounts: Some(mounts),
             memory: spec.mem_limit_bytes,
@@ -113,6 +130,7 @@ impl DockerDriver {
                 typ: Some("json-file".into()),
                 config: Some(log_opts),
             }),
+            port_bindings: if port_bindings.is_empty() { None } else { Some(port_bindings) },
             ..Default::default()
         };
 
@@ -126,6 +144,7 @@ impl DockerDriver {
         Config {
             image: Some(spec.image.clone()),
             env: Some(env),
+            exposed_ports: if exposed_ports.is_empty() { None } else { Some(exposed_ports) },
             host_config: Some(host_config),
             networking_config: Some(NetworkingConfig {
                 endpoints_config: endpoints,
@@ -398,6 +417,7 @@ mod tests {
             data_volume: "claw-data-alpha".into(),
             network: "claws-internal".into(),
             log: Default::default(),
+            published_ports: vec![],
         }
     }
 

@@ -231,6 +231,13 @@ fn build_spec(state: &AppState, overlay: &ClawOverlay, cfg_path: &PathBuf) -> Re
         .ok_or_else(|| anyhow::anyhow!("config path has no parent"))?
         .to_path_buf();
 
+    let published_ports: Vec<(u16, u16)> = overlay
+        .fleet
+        .published_ports
+        .iter()
+        .map(|p| (p.container, p.host))
+        .collect();
+
     Ok(ClawSpec {
         name: name.clone(),
         image,
@@ -243,6 +250,7 @@ fn build_spec(state: &AppState, overlay: &ClawOverlay, cfg_path: &PathBuf) -> Re
         data_volume: format!("claw-data-{name}"),
         network: state.cfg.claws_network.clone(),
         log: LogSettings { max_size: log_max_size, max_file: log_max_file },
+        published_ports,
     })
 }
 

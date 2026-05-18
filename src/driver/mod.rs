@@ -49,6 +49,11 @@ pub struct ClawSpec {
     pub network: String,
     /// Docker logging driver settings (json-file rotation).
     pub log: LogSettings,
+    /// Container→host port publishes (in addition to the gateway port,
+    /// which is reached via the orchestrator's proxy). Used for
+    /// channel listeners that must be reachable from outside the
+    /// orchestrator's docker network.
+    pub published_ports: Vec<(u16, u16)>,
 }
 
 /// `docker logs` retention knobs. Maps to docker's `json-file` driver opts.
