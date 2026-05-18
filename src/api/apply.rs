@@ -37,6 +37,7 @@ pub struct ApplyResult {
 }
 
 pub async fn apply_all(State(state): State<AppState>) -> impl IntoResponse {
+    refresh_overlays_from_disk(&state).await;
     let names = state.claws.read().await.clone();
     let mut results = Vec::with_capacity(names.len());
     for name in names {
@@ -58,9 +59,31 @@ pub async fn up_one(
     State(state): State<AppState>,
     Path(name): Path<String>,
 ) -> impl IntoResponse {
+    refresh_overlays_from_disk(&state).await;
     match apply_one_inner(&state, &name).await {
         Ok(r) => (StatusCode::OK, Json(r)).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")).into_response(),
+    }
+}
+
+/// Re-read every overlay from disk into the shared cache. Apply always
+/// hits this first so a `scp` + `POST /api/apply` cycle reflects new
+/// overlay state immediately, without needing an orchestrator restart.
+async fn refresh_overlays_from_disk(state: &AppState) {
+    let names = state.claws.read().await.clone();
+    let mut fresh = std::collections::HashMap::with_capacity(names.len());
+    for name in &names {
+        let path = state.cfg.fleet_dir.join("claws").join(format!("{name}.toml"));
+        match crate::manifest::ClawOverlay::from_path(&path) {
+            Ok(o) => { fresh.insert(name.clone(), o); }
+            Err(e) => {
+                tracing::warn!(claw = %name, error = %e, "overlay re-read failed; keeping cached");
+            }
+        }
+    }
+    let mut w = state.overlays.write().await;
+    for (k, v) in fresh {
+        w.insert(k, v);
     }
 }
 
