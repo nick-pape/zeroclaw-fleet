@@ -149,12 +149,42 @@ fn write_atomic(path: &PathBuf, content: &str) -> Result<()> {
 
 fn build_spec(state: &AppState, overlay: &ClawOverlay, cfg_path: &PathBuf) -> Result<ClawSpec> {
     let name = &overlay.fleet.name;
+
+    // Re-read fleet.yaml every apply so defaults track what's on disk
+    // (operator may have bumped `defaults.image` since startup).
+    let fleet_yaml = state.cfg.fleet_dir.join("fleet.yaml");
+    let manifest_defaults = crate::manifest::FleetManifest::from_path(&fleet_yaml)
+        .map(|m| m.defaults)
+        .unwrap_or_default();
+
     let image = overlay
         .fleet
         .image
         .clone()
+        .or(manifest_defaults.image)
         .or_else(|| state.cfg.default_image.clone())
         .ok_or_else(|| anyhow::anyhow!("no image — set fleet.defaults.image or overlay [_fleet] image"))?;
+
+    let mem_limit_bytes = manifest_defaults
+        .mem_limit
+        .as_deref()
+        .and_then(parse_mem_limit)
+        .or(state.cfg.default_mem_limit_bytes);
+    let cpu_limit = manifest_defaults.cpu_limit.or(state.cfg.default_cpu_limit);
+    let restart = manifest_defaults
+        .restart
+        .clone()
+        .or_else(|| state.cfg.default_restart.clone())
+        .unwrap_or_else(|| "unless-stopped".into());
+    let log_max_size = manifest_defaults
+        .log_max_size
+        .clone()
+        .or_else(|| state.cfg.default_log_max_size.clone())
+        .unwrap_or_else(|| "20m".into());
+    let log_max_file = manifest_defaults
+        .log_max_file
+        .or(state.cfg.default_log_max_file)
+        .unwrap_or(3);
 
     let mut env: BTreeMap<String, String> = BTreeMap::new();
     env.insert("ZEROCLAW_ALLOW_PUBLIC_BIND".into(), "true".into());
@@ -176,19 +206,32 @@ fn build_spec(state: &AppState, overlay: &ClawOverlay, cfg_path: &PathBuf) -> Re
     Ok(ClawSpec {
         name: name.clone(),
         image,
-        mem_limit_bytes: state.cfg.default_mem_limit_bytes,
-        cpu_limit: state.cfg.default_cpu_limit,
-        restart: state.cfg.default_restart.clone().unwrap_or_else(|| "unless-stopped".into()),
+        mem_limit_bytes,
+        cpu_limit,
+        restart,
         env,
         config_dir: config_dir_host,
         env_file,
         data_volume: format!("claw-data-{name}"),
         network: state.cfg.claws_network.clone(),
-        log: LogSettings {
-            max_size: state.cfg.default_log_max_size.clone().unwrap_or_else(|| "20m".into()),
-            max_file: state.cfg.default_log_max_file.unwrap_or(3),
-        },
+        log: LogSettings { max_size: log_max_size, max_file: log_max_file },
     })
+}
+
+/// Parse docker-style memory limits: `"1g"`, `"512m"`, `"1024"` (bytes).
+fn parse_mem_limit(s: &str) -> Option<i64> {
+    let s = s.trim();
+    if s.is_empty() { return None; }
+    let (num, mult): (&str, i64) = if let Some(n) = s.strip_suffix(|c: char| c.eq_ignore_ascii_case(&'g')) {
+        (n, 1024 * 1024 * 1024)
+    } else if let Some(n) = s.strip_suffix(|c: char| c.eq_ignore_ascii_case(&'m')) {
+        (n, 1024 * 1024)
+    } else if let Some(n) = s.strip_suffix(|c: char| c.eq_ignore_ascii_case(&'k')) {
+        (n, 1024)
+    } else {
+        (s, 1)
+    };
+    num.trim().parse::<i64>().ok().map(|n| n.saturating_mul(mult))
 }
 
 // Lifetime adapter so the BTreeMap import is reachable even if a future
