@@ -17,6 +17,10 @@ pub struct AuthentikClient {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct ProviderTemplate {
     pub authorization_flow: Option<String>,
+    /// Authentik 2026.2+ requires this field on provider create. Cloned
+    /// from the template so the new provider mirrors its session
+    /// invalidation behavior.
+    pub invalidation_flow: Option<String>,
     pub property_mappings: Option<Vec<String>>,
     pub signing_key: Option<String>,
 }
@@ -138,6 +142,7 @@ impl AuthentikClient {
             "client_type": "confidential",
             "client_id": name,
             "authorization_flow": template.authorization_flow,
+            "invalidation_flow": template.invalidation_flow,
             "property_mappings": template.property_mappings.as_deref().unwrap_or(&[]),
             "signing_key": template.signing_key,
             "issuer_mode": "per_provider",
