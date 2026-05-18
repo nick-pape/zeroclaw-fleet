@@ -25,6 +25,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(index))
         .route("/claws/{name}", get(claw_chrome))
+        .route("/configs", get(configs_page))
         .route("/static/{*path}", get(static_asset))
         .route("/api/config", get(public_config))
 }
@@ -37,6 +38,10 @@ async fn claw_chrome(Path(_name): Path<String>) -> Response<Body> {
     // The chrome HTML is identical for every claw; the client picks up
     // the name from `window.location.pathname`.
     serve("claw.html")
+}
+
+async fn configs_page() -> Response<Body> {
+    serve("configs.html")
 }
 
 async fn static_asset(Path(path): Path<String>) -> Response<Body> {
@@ -87,7 +92,9 @@ mod tests {
     fn embedded_assets_include_index_and_static() {
         assert!(WebAssets::get("index.html").is_some(), "index.html embedded");
         assert!(WebAssets::get("claw.html").is_some(), "claw.html embedded");
+        assert!(WebAssets::get("configs.html").is_some(), "configs.html embedded");
         assert!(WebAssets::get("static/app.css").is_some(), "app.css embedded");
         assert!(WebAssets::get("static/app.js").is_some(), "app.js embedded");
+        assert!(WebAssets::get("static/configs.js").is_some(), "configs.js embedded");
     }
 }

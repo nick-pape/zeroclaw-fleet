@@ -20,6 +20,7 @@ use crate::manifest::ClawOverlay;
 use crate::provision::ProvisionDeps;
 
 pub mod claws;
+pub mod configs;
 pub mod cost;
 pub mod logs;
 pub mod tenants;
@@ -59,6 +60,10 @@ pub fn router(state: AppState) -> Router {
         .route("/api/claws/{name}/cost", get(cost::per_claw))
         .route("/api/cost", get(cost::fleet))
         .route("/api/tenants", post(tenants::create))
+        .route("/api/configs", get(configs::list))
+        .route("/api/configs/base", get(configs::base))
+        .route("/api/configs/fleet", get(configs::fleet))
+        .route("/api/configs/claws/{name}", get(configs::claw_overlay))
         .merge(crate::web::router())
         .with_state(state)
 }

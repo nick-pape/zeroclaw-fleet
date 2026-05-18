@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZeroClaw Fleet — configs</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h1><a href="/" class="home">ZeroClaw Fleet</a></h1>
+      <div class="sub"><a href="/configs" class="active-link">Configs</a></div>
+    </div>
+    <nav id="config-list" class="claw-list">
+      <div class="empty">Loading…</div>
+    </nav>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <h2 id="page-title">Configs</h2>
+      <div class="actions">
+        <a id="git-link" href="#" target="_blank" rel="noopener" style="display:none">View on git ↗</a>
+      </div>
+    </header>
+    <section id="viewer" class="panel">
+      <p class="hint" id="empty-hint">Select a config on the left.</p>
+      <pre id="config-content" class="config-content" style="display:none"></pre>
+    </section>
+  </main>
+</div>
+<script src="/static/configs.js"></script>
+</body>
+</html>

@@ -101,6 +101,12 @@ struct ServeArgs {
     #[arg(long, env = "FLEET_COST_POLL_INTERVAL", default_value_t = 30)]
     cost_poll_interval_secs: u64,
 
+    /// Optional base URL for the git repo's blob view (e.g.
+    /// `https://github.com/owner/repo/blob/main/path/to/fleet`). When set,
+    /// the configs viewer adds a "View on git" link to each file.
+    #[arg(long, env = "FLEET_REPO_BLOB_BASE")]
+    repo_blob_base: Option<String>,
+
     // --- provisioning bootstrap (T6) ---
 
     /// Bao HTTP URL (e.g. `https://bao.example.com`). When set together
@@ -178,6 +184,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
         mcp_server_name: args.mcp_server_name.clone(),
         mcp_bearer_placeholder: args.mcp_bearer_placeholder.clone(),
         cost_poll_interval_secs: args.cost_poll_interval_secs,
+        repo_blob_base: args.repo_blob_base.clone(),
     }
     .into_shared();
 

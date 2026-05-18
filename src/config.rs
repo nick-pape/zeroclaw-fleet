@@ -31,6 +31,11 @@ pub struct OrchestratorConfig {
     pub mcp_bearer_placeholder: String,
     /// Cost poller cadence in seconds.
     pub cost_poll_interval_secs: u64,
+    /// Optional base URL for the git repo's blob view (e.g.
+    /// `"https://github.com/owner/repo/blob/main/path/to/fleet"`). When
+    /// set, the configs viewer attaches a "View on git" link to each
+    /// file. Absent when running outside the canonical repo.
+    pub repo_blob_base: Option<String>,
 }
 
 impl OrchestratorConfig {
