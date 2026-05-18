@@ -106,11 +106,36 @@ async fn apply_one_inner(state: &AppState, name: &str) -> Result<ApplyResult> {
     let bearer = ensure_bearer(state, name)?;
     steps.push(format!("bearer:{}", if bearer.is_new { "generated" } else { "existing" }));
 
+    // Resolve any [_fleet] channel_secrets from bao before render.
+    let mut channel_secrets = Vec::with_capacity(overlay.fleet.channel_secrets.len());
+    if !overlay.fleet.channel_secrets.is_empty() {
+        match state.provision.as_ref() {
+            None => warnings.push(format!(
+                "{} channel_secrets declared but bao bootstrap is missing; skipping",
+                overlay.fleet.channel_secrets.len()
+            )),
+            Some(deps) => {
+                for spec in &overlay.fleet.channel_secrets {
+                    let value = deps
+                        .bao
+                        .kv_get_field(&spec.bao_path, &spec.bao_field)
+                        .await
+                        .with_context(|| format!(
+                            "bao read {}.{}", spec.bao_path, spec.bao_field
+                        ))?;
+                    channel_secrets.push((spec.config_path.clone(), value));
+                    steps.push(format!("secret:{}", spec.config_path));
+                }
+            }
+        }
+    }
+
     let inj = Injections {
         orchestrator_bearer: bearer.value.clone(),
         mcp_bearer_placeholder: state.cfg.mcp_bearer_placeholder.clone(),
         mcp_server_url: state.cfg.mcp_server_url.clone(),
         mcp_server_name: state.cfg.mcp_server_name.clone(),
+        channel_secrets,
     };
     let rendered = render::render(&base, &overlay, &inj)?;
     let cfg_path = state.cfg.state_dir.join(name).join("config").join("config.toml");

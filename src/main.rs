@@ -386,6 +386,7 @@ fn render_to_stdout(
         mcp_bearer_placeholder,
         mcp_server_url,
         mcp_server_name,
+        channel_secrets: vec![],
     };
     let rendered = render::render(&base_src, &claw, &inj)?;
     print!("{rendered}");

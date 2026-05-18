@@ -99,6 +99,29 @@ pub struct FleetMetadata {
     /// CT posting SMS to a `[channels.webhook]` listener).
     #[serde(default)]
     pub published_ports: Vec<PublishedPort>,
+
+    /// Per-claw secrets injected into the rendered config.toml from bao
+    /// at apply time. Used for channel tokens (Telegram bot_token,
+    /// Discord token, Matrix password) and any other `#[secret]` fields
+    /// that should NOT live in the overlay (= git). The orchestrator's
+    /// bao client (the same one used for tenant provisioning) reads
+    /// each entry's `bao_path.bao_field` and writes the value into the
+    /// rendered config at `config_path`.
+    #[serde(default)]
+    pub channel_secrets: Vec<ChannelSecret>,
+}
+
+/// Single bao-resolved secret injected into the rendered config.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ChannelSecret {
+    /// Dotted TOML key the secret value is written to (e.g.
+    /// `"channels.telegram.bot_token"`).
+    pub config_path: String,
+    /// KV-v2 path under the bao mount (no leading `secret/data/`
+    /// — just `services/<name>/<sub>`).
+    pub bao_path: String,
+    /// Field name within the bao entry (e.g. `"bot_token"`).
+    pub bao_field: String,
 }
 
 /// A single container→host port publish. Both fields default to nothing

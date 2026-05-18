@@ -40,6 +40,13 @@ pub struct Injections {
     /// Name to use for the `[[mcp.servers]]` block (becomes the MCP-tool
     /// prefix that ZeroClaw exposes — e.g. `papehouse` → `papehouse__heb_*`).
     pub mcp_server_name: String,
+
+    /// Pre-resolved channel secrets to inject at specific TOML paths.
+    /// `(config_path, value)` — the renderer walks each `config_path`,
+    /// creating intermediate tables as needed, and writes the value as
+    /// a string at the leaf. apply.rs resolves the values from bao
+    /// before calling render.
+    pub channel_secrets: Vec<(String, String)>,
 }
 
 /// Render a claw's final `config.toml`.
@@ -48,7 +55,31 @@ pub fn render(base_toml: &str, overlay: &ClawOverlay, inj: &Injections) -> Resul
     deep_merge(&mut base, overlay.body.clone());
     inject_gateway(&mut base, inj);
     inject_mcp(&mut base, inj);
+    for (path, value) in &inj.channel_secrets {
+        set_dotted_path(&mut base, path, Value::String(value.clone()));
+    }
     Ok(toml::to_string_pretty(&base).context("serialize merged config")?)
+}
+
+/// Set a dotted TOML key path, creating intermediate tables as needed.
+/// `set_dotted_path(t, "channels.telegram.bot_token", "abc")` writes
+/// `t["channels"]["telegram"]["bot_token"] = "abc"`.
+pub fn set_dotted_path(table: &mut Table, path: &str, value: Value) {
+    let parts: Vec<&str> = path.split('.').collect();
+    if parts.is_empty() {
+        return;
+    }
+    let mut cur = table;
+    for part in &parts[..parts.len() - 1] {
+        let entry = cur
+            .entry(part.to_string())
+            .or_insert(Value::Table(Table::new()));
+        if !entry.is_table() {
+            *entry = Value::Table(Table::new());
+        }
+        cur = entry.as_table_mut().expect("just ensured table");
+    }
+    cur.insert(parts[parts.len() - 1].to_string(), value);
 }
 
 /// Recursively merge `source` into `target`. Tables merge; everything else is
@@ -133,7 +164,51 @@ mod tests {
             mcp_bearer_placeholder: "__MCP_BEARER__".into(),
             mcp_server_url: "https://hub.example.com/mcp".into(),
             mcp_server_name: "hub".into(),
+            channel_secrets: vec![],
         }
+    }
+
+    #[test]
+    fn set_dotted_path_creates_intermediates() {
+        let mut t = Table::new();
+        set_dotted_path(&mut t, "a.b.c", Value::String("hello".into()));
+        assert_eq!(t["a"]["b"]["c"].as_str().unwrap(), "hello");
+    }
+
+    #[test]
+    fn set_dotted_path_overwrites_existing_leaf() {
+        let mut t: Table = toml::from_str(r#"[a.b]
+c = "old"
+other = 1
+"#).unwrap();
+        set_dotted_path(&mut t, "a.b.c", Value::String("new".into()));
+        assert_eq!(t["a"]["b"]["c"].as_str().unwrap(), "new");
+        assert_eq!(t["a"]["b"]["other"].as_integer().unwrap(), 1);
+    }
+
+    #[test]
+    fn render_injects_channel_secrets_at_dotted_paths() {
+        let base = r#"
+[autonomy]
+level = "supervised"
+
+[channels.telegram]
+enabled = true
+allowed_users = ["123"]
+"#;
+        let overlay = ClawOverlay::from_str(r#"
+[_fleet]
+name = "alpha"
+"#).unwrap();
+        let mut inj = sample_inj();
+        inj.channel_secrets.push((
+            "channels.telegram.bot_token".into(),
+            "telegram-token-from-bao".into(),
+        ));
+        let rendered = render(base, &overlay, &inj).unwrap();
+        let parsed: Table = toml::from_str(&rendered).unwrap();
+        assert_eq!(parsed["channels"]["telegram"]["bot_token"].as_str().unwrap(), "telegram-token-from-bao");
+        assert_eq!(parsed["channels"]["telegram"]["enabled"].as_bool().unwrap(), true);
     }
 
     #[test]
